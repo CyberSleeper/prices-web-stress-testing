@@ -1,0 +1,60 @@
+version: '3.8'
+
+# Define a single network for all services to communicate
+networks:
+  k6-network:
+    driver: bridge
+
+services:
+  influxdb:
+    image: influxdb:1.8
+    networks:
+      - k6-network
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=k6
+      - INFLUXDB_HTTP_MAX_BODY_SIZE=0
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    # Add hostname for easier reference
+    hostname: influxdb
+
+  grafana:
+    image: grafana/grafana:latest
+    networks:
+      - k6-network
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    depends_on:
+      - influxdb
+
+  k6:
+    image: grafana/k6:latest
+    networks:
+      - k6-network
+    ports:
+      - "6565:6565"
+    environment:
+      # Use the container hostname for InfluxDB connection
+      - K6_OUT=influxdb=http://influxdb:8086/k6
+      - API_HOST=host.docker.internal:8080
+      # Add explicit InfluxDB URL for script
+      - INFLUXDB_URL=http://influxdb:8086
+    volumes:
+      - ./:/scripts
+    depends_on:
+      - influxdb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: run /scripts/script.js
+
+volumes:
+  influxdb-data:
+  grafana-data:
