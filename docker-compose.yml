@@ -6,19 +6,23 @@ networks:
     driver: bridge
 
 services:
-  influxdb:
-    image: influxdb:1.8
+  prometheus:
+    image: prom/prometheus:latest
     networks:
       - k6-network
     ports:
-      - "8086:8086"
-    environment:
-      - INFLUXDB_DB=k6
-      - INFLUXDB_HTTP_MAX_BODY_SIZE=0
+      - "9090:9090"
     volumes:
-      - influxdb-data:/var/lib/influxdb
-    # Add hostname for easier reference
-    hostname: influxdb
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    hostname: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--enable-feature=remote-write-receiver'  # Enable remote write receiver
 
   grafana:
     image: grafana/grafana:latest
@@ -33,7 +37,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana-provisioning:/etc/grafana/provisioning
     depends_on:
-      - influxdb
+      - prometheus
 
   k6:
     image: grafana/k6:latest
@@ -42,19 +46,18 @@ services:
     ports:
       - "6565:6565"
     environment:
-      # Use the container hostname for InfluxDB connection
-      - K6_OUT=influxdb=http://influxdb:8086/k6
+      - K6_OUT=experimental-prometheus-rw
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - K6_PROMETHEUS_RW_PUSH_INTERVAL=5s
       - API_HOST=host.docker.internal:8080
-      # Add explicit InfluxDB URL for script
-      - INFLUXDB_URL=http://influxdb:8086
     volumes:
       - ./:/scripts
     depends_on:
-      - influxdb
+      - prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: run /scripts/script.js
 
 volumes:
-  influxdb-data:
+  prometheus-data:
   grafana-data:
